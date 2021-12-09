@@ -122,3 +122,10 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# My
+*.out
+*.7z
+*.mp4
+*.pbm
+*.gpg
