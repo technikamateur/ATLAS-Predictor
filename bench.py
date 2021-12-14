@@ -4,10 +4,18 @@ import time
 from tqdm import tqdm
 
 
-class Ffmpeg:
+class Benchmark:
     def __init__(self, perf, repetitions):
         self.perf = perf
         self.repetitions = repetitions
+
+    def bench(self):
+        raise NotImplementedError
+
+
+class Ffmpeg(Benchmark):
+    def __init__(self, perf, repetitions):
+        super().__init__(perf, repetitions)
         self.cmd = ["ffmpeg", "-y", "-f", "image2", "-i", "raw/life_%06d.pbm", "-vf", "scale=1080:1080",
                     "result.mp4"]
         self.quality_steps = [0, 10, 20, 30, 40, 50]
@@ -18,9 +26,32 @@ class Ffmpeg:
     def bench(self):
         combos = [self.quality_steps, self.fps, self.preset]
         combos = list(itertools.product(*combos))
-        print(combos)
         with open("ffmpeg.txt", "w") as f:
             print("Benching ffmpeg:")
+            f.write("Run,Time,quality,fps,preset")
+            for element in tqdm(combos):
+                full_cmd = self.cmd + ["-crf", element[0]] + ["-r", element[1]] + ["-preset", element[2]]
+                for i in range(repetitions):
+                    start = time.perf_counter()
+                    result = subprocess.run(self.perf + full_cmd, capture_output=True)
+                    end = time.perf_counter()
+                    f.write("Time: {}\n".format(end - start))
+
+
+class Zip(Benchmark):
+    def __init__(self, perf, repetitions):
+        super().__init__(perf, repetitions)
+        self.cmd = ["7z", "a", "-aoa", "-t7z", "-m0=LZMA2", "-mx=1", "output.7z", "raw/*.pbm", "-r"]
+        self.x = [0, 1, 3, 5, 7, 9]  # 0=copy. should be same time with every compression method
+        self.mt = ["on", "off"]
+        self.algo = ["lzma", "lzma2", "bzip2", "deflate"]
+
+    def bench(self):
+        combos = [self.x, self.mt, self.algo]
+        combos = list(itertools.product(*combos))
+        with open("7zip.txt", "w") as f:
+            print("Benching 7zip:")
+            f.write("Run,Time,x,mt,algo")
             for element in tqdm(combos):
                 for i in range(repetitions):
                     start = time.perf_counter()
@@ -30,18 +61,15 @@ class Ffmpeg:
 
 
 # Config
-repetitions = 1
+repetitions = 5
+benchs = list()
 perf = ["perf", "stat", "--field-separator", ",", "--event",
         "context-switches,cpu-migrations,energy-pkg,cache-misses,branch-misses"]
-zips = ["7z", "a", "-aoa", "-t7z", "-m0=LZMA2", "-mx=1", "output.7z", "raw/*.pbm", "-r"]
-ffmpeg = ["ffmpeg", "-y", "-f", "image2", "-r", "6", "-i", "raw/life_%06d.pbm", "-crf", "22", "-vf", "scale=1080:1080",
-          "result.mp4"]
-
 # Benching
 print("Welcome to our Benchmark! We are doing {} repetitions per bench.".format(repetitions))
-num_one = Ffmpeg(perf, repetitions)
-num_one.bench()
-# print("running 7z...")
-# result = subprocess.run(perf+zips, capture_output=True)
+benchs.append(Ffmpeg(perf, repetitions))
+benchs.append(Zip(perf, repetitions))
+for b in benchs:
+    b.bench()
 # print(result.stdout.decode())
 # print(result.stderr.decode())
