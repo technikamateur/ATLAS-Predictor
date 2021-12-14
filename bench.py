@@ -53,9 +53,10 @@ class Zip(Benchmark):
             print("Benching 7zip:")
             f.write("Run,Time,x,mt,algo")
             for element in tqdm(combos):
+                full_cmd = self.cmd + ["-mx=" + element[0]] + ["-mt="+ element[1]] + ["-m0=" + element[2]]
                 for i in range(repetitions):
                     start = time.perf_counter()
-                    result = subprocess.run(self.perf + self.cmd, capture_output=True)
+                    result = subprocess.run(self.perf + full_cmd, capture_output=True)
                     end = time.perf_counter()
                     f.write("Time: {}\n".format(end - start))
 
