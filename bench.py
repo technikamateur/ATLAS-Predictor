@@ -1,6 +1,7 @@
 import itertools
 import os
 import subprocess
+
 from tqdm import tqdm
 
 
@@ -18,8 +19,7 @@ class Benchmark:
 class Ffmpeg(Benchmark):
     def __init__(self, perf, repetitions):
         super().__init__(perf, repetitions)
-        self.cmd = ["ffmpeg", "-y", "-f", "image2", "-i", "raw/life_%06d.pbm", "-vf", "scale=1080:1080",
-                    "result.mp4"]
+        self.cmd = ["ffmpeg", "-y", "-f", "image2", "-i", "raw/life_%06d.pbm", "-vf", "scale=1080:1080"]
         self.quality_steps = ["0", "10", "20", "30", "40", "50"]
         self.fps = ["1", "5", "10", "15", "25"]
         # self.scale = [720, 1080, 2048]
@@ -29,9 +29,10 @@ class Ffmpeg(Benchmark):
         combos = [self.quality_steps, self.fps, self.preset]
         combos = list(itertools.product(*combos))
         print("Benching ffmpeg:")
-        for element in tqdm(combos):
-            full_cmd = self.cmd + ["-crf", element[0]] + ["-r", element[1]] + ["-preset", element[2]]
-            for i in range(repetitions):
+        for index, element in tqdm(enumerate(combos)):
+            full_cmd = self.cmd + ["-crf", element[0]] + ["-r", element[1]] + ["-preset", element[2]] + [
+                "result_{}.mp4".format(index)]
+            for i in range(self.repetitions):
                 result = subprocess.run(self.perf + self.time + full_cmd, capture_output=True)
                 with open("time.txt", "r") as time_file:
                     lines = time_file.readlines()
@@ -66,6 +67,12 @@ class Zip(Benchmark):
                 os.remove("time.txt")
 
 
+class Gpg(Benchmark):
+    def __init__(self, perf, repetitions):
+        super().__init__(perf, repetitions)
+        self.cmd = ["gpg -r lol@lol.com"]
+
+
 # Config
 repetitions = 5
 benchs = list()
@@ -77,5 +84,3 @@ benchs.append(Ffmpeg(perf, repetitions))
 benchs.append(Zip(perf, repetitions))
 for b in benchs:
     b.bench()
-# print(result.stdout.decode())
-# print(result.stderr.decode())
