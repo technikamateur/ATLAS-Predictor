@@ -15,11 +15,21 @@ class Benchmark:
     def bench(self):
         raise NotImplementedError
 
+    def run_subprocess(self, element, full_cmd):
+        for i in range(self.repetitions):
+            result = subprocess.run(self.perf + self.time + full_cmd, capture_output=True)
+            with open("time.txt", "r") as time_file:
+                lines = time_file.readlines()
+                lines = [line.rstrip() for line in lines]
+            self.output.setdefault(element, []).append(
+                [lines[0], lines[1], result.stdout.decode(), result.stderr.decode()])
+            os.remove("time.txt")
+
 
 class Ffmpeg(Benchmark):
     def __init__(self, perf, repetitions):
         super().__init__(perf, repetitions)
-        self.cmd = ["ffmpeg", "-y", "-f", "image2", "-i", "raw/life_%06d.pbm", "-vf", "scale=1080:1080"]
+        self.cmd = ["ffmpeg", "-y", "-f", "image2", "-i", "raw/life_%06d.pbm", "-vf", "scale=1080:1080", "result.mp4"]
         self.quality_steps = ["0", "10", "20", "30", "40", "50"]
         self.fps = ["1", "5", "10", "15", "25"]
         # self.scale = [720, 1080, 2048]
@@ -29,17 +39,9 @@ class Ffmpeg(Benchmark):
         combos = [self.quality_steps, self.fps, self.preset]
         combos = list(itertools.product(*combos))
         print("Benching ffmpeg:")
-        for index, element in tqdm(enumerate(combos)):
-            full_cmd = self.cmd + ["-crf", element[0]] + ["-r", element[1]] + ["-preset", element[2]] + [
-                "result_{}.mp4".format(index)]
-            for i in range(self.repetitions):
-                result = subprocess.run(self.perf + self.time + full_cmd, capture_output=True)
-                with open("time.txt", "r") as time_file:
-                    lines = time_file.readlines()
-                    lines = [line.rstrip() for line in lines]
-                self.output.setdefault(element, []).append(
-                    [lines[0], lines[1], result.stdout.decode(), result.stderr.decode()])
-                os.remove("time.txt")
+        for element in tqdm(combos):
+            full_cmd = self.cmd + ["-crf", element[0]] + ["-r", element[1]] + ["-preset", element[2]]
+            self.run_subprocess(element, full_cmd)
 
 
 class Zip(Benchmark):
@@ -57,20 +59,30 @@ class Zip(Benchmark):
         print("Benching 7zip:")
         for element in tqdm(combos):
             full_cmd = self.cmd + ["-mx=" + element[0]] + ["-mmt=" + element[1]] + ["-m0=" + element[2]] + self.cmd_two
-            for i in range(repetitions):
-                result = subprocess.run(self.perf + self.time + full_cmd, capture_output=True)
-                with open("time.txt", "r") as time_file:
-                    lines = time_file.readlines()
-                    lines = [line.rstrip() for line in lines]
-                self.output.setdefault(element, []).append(
-                    [lines[0], lines[1], result.stdout.decode(), result.stderr.decode()])
-                os.remove("time.txt")
+            self.run_subprocess(element, full_cmd)
 
 
-class Gpg(Benchmark):
+class Openssl(Benchmark):
     def __init__(self, perf, repetitions):
         super().__init__(perf, repetitions)
-        self.cmd = ["gpg -r lol@lol.com"]
+        self.cmd_enc = ["openssl", "enc", "-pass", "pass:1234", "-out", "encrypted.data"]
+        self.cmd_dec = ["openssl", "enc", "-d", "-pass", "pass:1234"]
+        self.salt = ["-salt", "-nosalt"]
+        self.base64 = ["", "-a"]
+        self.pbkdf2 = ["", "-pbkdf2"]
+        self.enc = ["aes-128-cbc", "aes-128-ecb", "aes-192-cbc", "aes-192-ecb", "aes-256-cbc", "aes-256-ecb"]
+        self.sizes = ["10", "100", "1000", "10000"]
+
+    def bench(self):
+        combos = [self.enc, self.base64, self.salt, self.pbkdf2]
+        combos = list(itertools.product(*combos))
+        print("Benching Openssl:")
+        for size in self.sizes:
+            subprocess.run(["dd", "if=/dev/zero", "of=" + size + ".file", "bs=1M", "count=10000"])
+            for element in tqdm(combos):
+                full_cmd = self.cmd + element + ["-in", size + ".file"]
+                self.run_subprocess(element, full_cmd)
+        os.remove("*.file")
 
 
 # Config

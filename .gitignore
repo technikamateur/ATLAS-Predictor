@@ -131,3 +131,4 @@ dmypy.json
 *.gpg
 .idea/
 *.txt
+*.file
