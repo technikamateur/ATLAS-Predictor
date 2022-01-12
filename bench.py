@@ -1,6 +1,7 @@
 import itertools
 import os
 import subprocess
+import sys
 
 from tqdm import tqdm
 
@@ -70,7 +71,7 @@ class Openssl(Benchmark):
         self.salt = ["-salt", "-nosalt"]
         self.base64 = ["", "-a"]
         self.pbkdf2 = ["", "-pbkdf2"]
-        self.enc = ["aes-128-cbc", "aes-128-ecb", "aes-192-cbc", "aes-192-ecb", "aes-256-cbc", "aes-256-ecb"]
+        self.enc = ["-aes-128-cbc", "-aes-128-ecb", "-aes-192-cbc", "-aes-192-ecb", "-aes-256-cbc", "-aes-256-ecb"]
         self.sizes = ["10", "100", "1000", "10000"]
 
     def bench(self):
@@ -78,21 +79,32 @@ class Openssl(Benchmark):
         combos = list(itertools.product(*combos))
         print("Benching Openssl:")
         for size in self.sizes:
-            subprocess.run(["dd", "if=/dev/zero", "of=" + size + ".file", "bs=1M", "count=10000"])
+            subprocess.run(["dd", "if=/dev/zero", "of=" + size + ".file", "bs=1M", "count=" + size])
             for element in tqdm(combos):
-                full_cmd = self.cmd + element + ["-in", size + ".file"]
+                full_cmd = self.cmd_enc + list(element) + ["-in", size + ".file"]
                 self.run_subprocess(element, full_cmd)
-        os.remove("*.file")
 
 
-# Config
-repetitions = 5
-benchs = list()
-perf = ["perf", "stat", "--field-separator", ",", "--event",
-        "context-switches,cpu-migrations,energy-pkg,cache-misses,branch-misses"]
-# Benching
-print("Welcome to our Benchmark! We are doing {} repetitions per bench.".format(repetitions))
-benchs.append(Ffmpeg(perf, repetitions))
-benchs.append(Zip(perf, repetitions))
-for b in benchs:
-    b.bench()
+if __name__ == '__main__':
+    try:
+        # Config
+        repetitions = 5
+        benchs = list()
+        ext = [".file", ".7z", ".data", ".mp4"]
+        perf = ["perf", "stat", "--field-separator", ",", "--event",
+                "context-switches,cpu-migrations,energy-pkg,cache-misses,branch-misses"]
+        # Benching
+        print("Welcome to our Benchmark! We are doing {} repetitions per bench.".format(repetitions))
+        # benchs.append(Ffmpeg(perf, repetitions))
+        # benchs.append(Zip(perf, repetitions))
+        benchs.append(Openssl(perf, repetitions))
+        for b in benchs:
+            b.bench()
+    except KeyboardInterrupt:
+        print('Received Keyboard Interrupt')
+        print('Cleaning up before exit...')
+        print('Bye :)')
+        for file in os.listdir():
+            if file.endswith(tuple(ext)):
+                os.remove(file)
+        sys.exit(0)
