@@ -6,11 +6,19 @@ import sys
 from tqdm import tqdm
 
 
+# TODO: /sys/devices/virtual/powercap/intel-rapl/intel-rapl:0
+
 class Benchmark:
     def __init__(self, perf, repetitions):
         self.perf = perf
         self.repetitions = repetitions
-        self.time = ["/usr/bin/time", "-o", "time.txt"]
+        self.time = ["/usr/bin/time", "-f", "%U,%S,%e", "-o", "time.tmp"]
+        """
+        Stores all results. Format:
+        arguments -> list of runs (one element per run)
+        one run: [time, perf]
+        time: [User,System,elapsed]
+        """
         self.output = dict()
 
     def bench(self):
@@ -19,12 +27,24 @@ class Benchmark:
     def run_subprocess(self, element, full_cmd):
         for i in range(self.repetitions):
             result = subprocess.run(self.perf + self.time + full_cmd, capture_output=True)
-            with open("time.txt", "r") as time_file:
-                lines = time_file.readlines()
-                lines = [line.rstrip() for line in lines]
+            with open("time.tmp", "r") as time_file:
+                time = time_file.readline().rstrip()
             self.output.setdefault(element, []).append(
-                [lines[0], lines[1], result.stdout.decode(), result.stderr.decode()])
-            os.remove("time.txt")
+                [time.split(","), self.extract_perf(result.stderr.decode())])
+            os.remove("time.tmp")
+
+    def extract_perf(self, stderr):
+        cleaned_perf = dict()
+        # determine number of perf elements
+        num_of_perf = len(self.perf[-1].split(","))
+        # cut output
+        perf_only = stderr.splitlines()[-num_of_perf:]
+        # remove empty elements
+        for ele in perf_only:
+            value = [x for x in ele.split(",") if x]
+            key = value.pop(1)
+            cleaned_perf[key] = value
+        return cleaned_perf
 
 
 class Ffmpeg(Benchmark):
@@ -81,7 +101,8 @@ class Openssl(Benchmark):
         for size in self.sizes:
             subprocess.run(["dd", "if=/dev/zero", "of=" + size + ".file", "bs=1M", "count=" + size])
             for element in tqdm(combos):
-                full_cmd = self.cmd_enc + list(element) + ["-in", size + ".file"]
+                # We must remove empty elements. Else it will fail
+                full_cmd = self.cmd_enc + [x for x in list(element) if x] + ["-in", size + ".file"]
                 self.run_subprocess(element, full_cmd)
 
 
@@ -90,9 +111,9 @@ if __name__ == '__main__':
         # Config
         repetitions = 5
         benchs = list()
-        ext = [".file", ".7z", ".data", ".mp4"]
+        ext = [".file", ".7z", ".data", ".mp4", ".tmp"]
         perf = ["perf", "stat", "--field-separator", ",", "--event",
-                "context-switches,cpu-migrations,energy-pkg,cache-misses,branch-misses"]
+                "context-switches,cpu-migrations,cache-misses,branch-misses"]
         # Benching
         print("Welcome to our Benchmark! We are doing {} repetitions per bench.".format(repetitions))
         # benchs.append(Ffmpeg(perf, repetitions))
@@ -103,8 +124,8 @@ if __name__ == '__main__':
     except KeyboardInterrupt:
         print('Received Keyboard Interrupt')
         print('Cleaning up before exit...')
-        print('Bye :)')
         for file in os.listdir():
             if file.endswith(tuple(ext)):
                 os.remove(file)
+        print('Bye :)')
         sys.exit(0)
