@@ -6,18 +6,16 @@ import sys
 from tqdm import tqdm
 
 
-# TODO: /sys/devices/virtual/powercap/intel-rapl/intel-rapl:0
-
 class Benchmark:
     def __init__(self, perf, repetitions):
         self.perf = perf
         self.repetitions = repetitions
         self.time = ["/usr/bin/time", "-f", "%U,%S,%e", "-o", "time.tmp"]
+        self.time_format = ["user", "sys", "elapsed"]
         """
         Stores all results. Format:
         arguments -> list of runs (one element per run)
-        one run: [time, perf]
-        time: [User,System,elapsed]
+        one run: [time, {"package": package_energy, "core": core_energy}, perf]
         """
         self.output = dict()
 
@@ -26,11 +24,28 @@ class Benchmark:
 
     def run_subprocess(self, element, full_cmd):
         for i in range(self.repetitions):
+            # read energy before running
+            with open("/sys/devices/virtual/powercap/intel-rapl/intel-rapl:0/energy_uj", "r") as package, open(
+                    "/sys/devices/virtual/powercap/intel-rapl/intel-rapl:0/intel-rapl:0:0/energy_uj", "r") as core:
+                package_energy = int(package.readline().rstrip())
+                core_energy = int(core.readline().rstrip())
+            # execute command
             result = subprocess.run(self.perf + self.time + full_cmd, capture_output=True)
+            # read energy again
+            with open("/sys/devices/virtual/powercap/intel-rapl/intel-rapl:0/energy_uj", "r") as package, open(
+                    "/sys/devices/virtual/powercap/intel-rapl/intel-rapl:0/intel-rapl:0:0/energy_uj", "r") as core:
+                package_energy = int(package.readline().rstrip()) - package_energy
+                core_energy = int(core.readline().rstrip()) - core_energy
+            # read time
             with open("time.tmp", "r") as time_file:
                 time = time_file.readline().rstrip()
+            time = time.split(",")
+            [float(i) for i in time]
+            time = dict(zip(self.time_format, time))
+            # save results
             self.output.setdefault(element, []).append(
-                [time.split(","), self.extract_perf(result.stderr.decode())])
+                [time, {"package": package_energy, "core": core_energy}, self.extract_perf(result.stderr.decode())])
+            # clear
             os.remove("time.tmp")
 
     def extract_perf(self, stderr):
