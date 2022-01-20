@@ -61,6 +61,32 @@ class Benchmark:
             cleaned_perf[key] = value
         return cleaned_perf
 
+    def export(self):
+        # remove later - for with open...
+        name = type(self).__name__
+        metrics = self.get_metrics()
+        # parse output
+        for key, value in self.output.items():
+            csv_key = list()
+            # make all metrics numeric
+            for idx, val in enumerate(key):
+                try:
+                    ele = int(val)
+                except ValueError:
+                    ele = metrics[idx].index(val)
+                csv_key.append(ele)
+            # go through repetitions
+            for bench in value:
+                # create a dict with all values
+                big_dict = bench.pop(0)
+                for d in bench:
+                    big_dict.update(d)
+                # for every target one line with same metric
+                for k, v in big_dict.items():
+                    pass
+                    # maybe extra class, which can handle this in uses ctypes
+
+
 
 class Ffmpeg(Benchmark):
     def __init__(self, perf, repetitions):
@@ -78,6 +104,9 @@ class Ffmpeg(Benchmark):
         for element in tqdm(combos):
             full_cmd = self.cmd + ["-crf", element[0]] + ["-r", element[1]] + ["-preset", element[2]]
             self.run_subprocess(element, full_cmd)
+
+    def get_metrics(self):
+        return [self.quality_steps, self.fps, self.preset]
 
 
 class Zip(Benchmark):
