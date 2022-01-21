@@ -1,17 +1,24 @@
 import itertools
 import os
+import random
 import subprocess
 import sys
 
 from tqdm import tqdm
 
 
+###########
+# You need Python 3.7 or higher to run this script
+###########
+
+
 class Benchmark:
-    def __init__(self, perf, repetitions):
+    def __init__(self, perf, repetitions, training_percentage):
         self.perf = perf
         self.repetitions = repetitions
         self.time = ["/usr/bin/time", "-f", "%U,%S,%e", "-o", "time.tmp"]
         self.time_format = ["user", "sys", "elapsed"]
+        self.training_percentage = training_percentage
         """
         Stores all results. Format:
         arguments -> list of runs (one element per run)
@@ -20,6 +27,9 @@ class Benchmark:
         self.output = dict()
 
     def bench(self):
+        raise NotImplementedError
+
+    def get_metrics(self):
         raise NotImplementedError
 
     def run_subprocess(self, element, full_cmd):
@@ -86,6 +96,17 @@ class Benchmark:
                     pass
                     # maybe extra class, which can handle this in uses ctypes
 
+    def pick_trainingsdata(self) -> dict:
+        training = dict()
+        training_rand = random.sample(range(len(self.output) * self.repetitions),
+                                      len(self.output) * self.repetitions * self.training_percentage)
+        for select in training_rand:
+            res = divmod(select)
+            key = list(self.output)[res[0]]
+            value = list(self.output.values())[res[1]]
+            training.setdefault(key, []).append(value)
+
+        return training
 
 
 class Ffmpeg(Benchmark):
@@ -153,13 +174,16 @@ class Openssl(Benchmark):
 if __name__ == '__main__':
     try:
         # Config
+        random.seed()
+        training_percentage = 0.7
         repetitions = 5
         benchs = list()
         ext = [".file", ".7z", ".data", ".mp4", ".tmp"]
         perf = ["perf", "stat", "--field-separator", ",", "--event",
                 "context-switches,cpu-migrations,cache-misses,branch-misses"]
         # Benching
-        print("Welcome to our Benchmark! We are doing {} repetitions per bench.".format(repetitions))
+        print("Welcome to our Benchmark! We are doing {} repetitions per metric.".format(repetitions))
+        print("As configured, {}% of the results will be used as trainings data.".format(training_percentage * 100))
         # benchs.append(Ffmpeg(perf, repetitions))
         # benchs.append(Zip(perf, repetitions))
         benchs.append(Openssl(perf, repetitions))
