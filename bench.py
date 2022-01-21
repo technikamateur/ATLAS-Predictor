@@ -77,14 +77,7 @@ class Benchmark:
         metrics = self.get_metrics()
         # parse output
         for key, value in self.output.items():
-            csv_key = list()
-            # make all metrics numeric
-            for idx, val in enumerate(key):
-                try:
-                    ele = int(val)
-                except ValueError:
-                    ele = metrics[idx].index(val)
-                csv_key.append(ele)
+            csv_key = self._convert_keys_to_int(key)
             # go through repetitions
             for bench in value:
                 # create a dict with all values
@@ -96,17 +89,29 @@ class Benchmark:
                     pass
                     # maybe extra class, which can handle this in uses ctypes
 
-    def pick_trainingsdata(self) -> dict:
+    def _pick_trainingsdata(self) -> dict:
         training = dict()
         training_rand = random.sample(range(len(self.output) * self.repetitions),
                                       len(self.output) * self.repetitions * self.training_percentage)
         for select in training_rand:
-            res = divmod(select)
+            res = divmod(select, self.repetitions)
             key = list(self.output)[res[0]]
             value = list(self.output.values())[res[1]]
             training.setdefault(key, []).append(value)
 
         return training
+
+    def _convert_keys_to_int(self, key: list) -> list:
+        csv_key = list()
+        metrics = self.get_metrics()
+        # make all metrics numeric
+        for idx, val in enumerate(key):
+            try:
+                ele = int(val)
+            except ValueError:
+                ele = metrics[idx].index(val)
+            csv_key.append(ele)
+        return csv_key
 
 
 class Ffmpeg(Benchmark):
@@ -147,6 +152,9 @@ class Zip(Benchmark):
             full_cmd = self.cmd + ["-mx=" + element[0]] + ["-mmt=" + element[1]] + ["-m0=" + element[2]] + self.cmd_two
             self.run_subprocess(element, full_cmd)
 
+    def get_metrics(self):
+        return [self.x, self.mt, self.algo]
+
 
 class Openssl(Benchmark):
     def __init__(self, perf, repetitions):
@@ -170,9 +178,16 @@ class Openssl(Benchmark):
                 full_cmd = self.cmd_enc + [x for x in list(element) if x] + ["-in", size + ".file"]
                 self.run_subprocess(element, full_cmd)
 
+    def get_metrics(self):
+        return [self.salt, self.base64, self.pbkdf2, self.enc, self.sizes]
+
 
 if __name__ == '__main__':
     try:
+        # check for permissions first
+        if not os.access('/sys/devices/virtual/powercap/intel-rapl/intel-rapl:0/energy_uj', os.R_OK):
+            print("No permissions. Please run \"sudoen.sh\"!")
+            sys.exit(2)
         # Config
         random.seed()
         training_percentage = 0.7
