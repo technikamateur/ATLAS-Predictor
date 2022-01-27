@@ -1,3 +1,4 @@
+import csv
 import itertools
 import os
 import random
@@ -7,11 +8,6 @@ import sys
 from tqdm import tqdm
 
 
-###########
-# You need Python 3.7 or higher to run this script
-###########
-
-
 class Benchmark:
     def __init__(self, perf, repetitions, training_percentage):
         self.perf = perf
@@ -19,6 +15,9 @@ class Benchmark:
         self.time = ["/usr/bin/time", "-f", "%U,%S,%e", "-o", "time.tmp"]
         self.time_format = ["user", "sys", "elapsed"]
         self.training_percentage = training_percentage
+
+        self.training = dict()
+        self.control = dict()
         """
         Stores all results. Format:
         arguments -> list of runs (one element per run)
@@ -54,11 +53,11 @@ class Benchmark:
             time = dict(zip(self.time_format, time))
             # save results
             self.output.setdefault(element, []).append(
-                [time, {"package": package_energy, "core": core_energy}, self.extract_perf(result.stderr.decode())])
+                [time, {"package": package_energy, "core": core_energy}, self._extract_perf(result.stderr.decode())])
             # clear
             os.remove("time.tmp")
 
-    def extract_perf(self, stderr):
+    def _extract_perf(self, stderr):
         cleaned_perf = dict()
         # determine number of perf elements
         num_of_perf = len(self.perf[-1].split(","))
@@ -71,35 +70,31 @@ class Benchmark:
             cleaned_perf[key] = value
         return cleaned_perf
 
-    def export(self):
-        # remove later - for with open...
-        name = type(self).__name__
-        metrics = self.get_metrics()
-        # parse output
+    def split(self):
         for key, value in self.output.items():
-            csv_key = self._convert_keys_to_int(key)
+            predictor_key = self._convert_keys_to_int(key)
             # go through repetitions
             for bench in value:
-                # create a dict with all values
-                big_dict = bench.pop(0)
-                for d in bench:
-                    big_dict.update(d)
-                # for every target one line with same metric
-                for k, v in big_dict.items():
-                    pass
-                    # maybe extra class, which can handle this in uses ctypes
+                if random.randint(1, 100) <= self.training_percentage:
+                    self.training.setdefault(predictor_key, []).append(bench)
+                else:
+                    self.control.setdefault(predictor_key, []).append(bench)
 
-    def _pick_trainingsdata(self) -> dict:
-        training = dict()
-        training_rand = random.sample(range(len(self.output) * self.repetitions),
-                                      len(self.output) * self.repetitions * self.training_percentage)
-        for select in training_rand:
-            res = divmod(select, self.repetitions)
-            key = list(self.output)[res[0]]
-            value = list(self.output.values())[res[1]]
-            training.setdefault(key, []).append(value)
-
-        return training
+    def export_to_file(self):
+        with open('{}.res'.format(type(self).__name__), "w") as export_file:
+            csv_w = csv.writer(export_file, delimiter='#')
+            for key, value in self.output.items():
+                export = list()
+                string_keys = [str(i) for i in self._convert_keys_to_int(key)]
+                export.append(','.join(string_keys))
+                for bench in value:
+                    string_value = ""
+                    for e in bench:
+                        print(e)
+                        val_str = [str(i) for i in list(e.values())]
+                        string_value = string_value + ",".join(val_str)
+                    export.append(string_value)
+                csv_w.writerow(export)
 
     def _convert_keys_to_int(self, key: list) -> list:
         csv_key = list()
@@ -115,8 +110,8 @@ class Benchmark:
 
 
 class Ffmpeg(Benchmark):
-    def __init__(self, perf, repetitions):
-        super().__init__(perf, repetitions)
+    def __init__(self, perf, repetitions, training_percentage):
+        super().__init__(perf, repetitions, training_percentage)
         self.cmd = ["ffmpeg", "-y", "-f", "image2", "-i", "raw/life_%06d.pbm", "-vf", "scale=1080:1080", "result.mp4"]
         self.quality_steps = ["0", "10", "20", "30", "40", "50"]
         self.fps = ["1", "5", "10", "15", "25"]
@@ -136,8 +131,8 @@ class Ffmpeg(Benchmark):
 
 
 class Zip(Benchmark):
-    def __init__(self, perf, repetitions):
-        super().__init__(perf, repetitions)
+    def __init__(self, perf, repetitions, training_percentage):
+        super().__init__(perf, repetitions, training_percentage)
         self.cmd = ["7z", "a", "-aoa", "-t7z"]
         self.cmd_two = ["output.7z", "raw/*.pbm", "-r"]
         self.x = ["0", "1", "3", "5", "7", "9"]  # 0=copy. should be same time with every compression method
@@ -157,8 +152,8 @@ class Zip(Benchmark):
 
 
 class Openssl(Benchmark):
-    def __init__(self, perf, repetitions):
-        super().__init__(perf, repetitions)
+    def __init__(self, perf, repetitions, training_percentage):
+        super().__init__(perf, repetitions, training_percentage)
         self.cmd_enc = ["openssl", "enc", "-pass", "pass:1234", "-out", "encrypted.data"]
         self.cmd_dec = ["openssl", "enc", "-d", "-pass", "pass:1234"]
         self.salt = ["-salt", "-nosalt"]
@@ -179,18 +174,22 @@ class Openssl(Benchmark):
                 self.run_subprocess(element, full_cmd)
 
     def get_metrics(self):
-        return [self.salt, self.base64, self.pbkdf2, self.enc, self.sizes]
+        return [self.enc, self.base64, self.salt, self.pbkdf2, self.sizes]
 
 
 if __name__ == '__main__':
     try:
         # check for permissions first
         if not os.access('/sys/devices/virtual/powercap/intel-rapl/intel-rapl:0/energy_uj', os.R_OK):
-            print("No permissions. Please run \"sudoen.sh\"!")
-            sys.exit(2)
+            sys.exit("No permissions. Please run \"sudoen.sh\" first.")
+        # check Python version
+        MIN_PYTHON = (3, 7)
+        if sys.version_info < MIN_PYTHON:
+            sys.exit("Python %s.%s or later is required.\n" % MIN_PYTHON)
         # Config
         random.seed()
-        training_percentage = 0.7
+        # percentage of trainingsdata to pick. Has to be an int between 1 and 100
+        training_percentage = 70
         repetitions = 5
         benchs = list()
         ext = [".file", ".7z", ".data", ".mp4", ".tmp"]
@@ -198,14 +197,16 @@ if __name__ == '__main__':
                 "context-switches,cpu-migrations,cache-misses,branch-misses"]
         # Benching
         print("Welcome to our Benchmark! We are doing {} repetitions per metric.".format(repetitions))
-        print("As configured, {}% of the results will be used as trainings data.".format(training_percentage * 100))
+        print("As configured, {}% of the results will be used as trainings data.".format(training_percentage))
         # benchs.append(Ffmpeg(perf, repetitions))
         # benchs.append(Zip(perf, repetitions))
-        benchs.append(Openssl(perf, repetitions))
+        benchs.append(Openssl(perf, repetitions, training_percentage))
         for b in benchs:
             b.bench()
     except KeyboardInterrupt:
         print('Received Keyboard Interrupt')
+        for b in benchs:
+            b.export_to_file()
         print('Cleaning up before exit...')
         for file in os.listdir():
             if file.endswith(tuple(ext)):
