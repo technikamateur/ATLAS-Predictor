@@ -15,6 +15,7 @@ class Benchmark:
         self.time = ["/usr/bin/time", "-f", "%U,%S,%e", "-o", "time.tmp"]
         self.time_format = ["user", "sys", "elapsed"]
         self.training_percentage = training_percentage
+        self.sampling = 100
 
         self.training = dict()
         self.control = dict()
@@ -54,6 +55,9 @@ class Benchmark:
             # save results
             self.output.setdefault(element, []).append(
                 [time, {"package": package_energy, "core": core_energy}, self._extract_perf(result.stderr.decode())])
+            with open('{}.out'.format(type(self).__name__), "a") as out_file, open('{}.err'.format(type(self).__name__), "a") as err_file:
+                out_file.write(result.stdout.decode())
+                err_file.write(result.stderr.decode())
             # clear
             os.remove("time.tmp")
 
@@ -67,7 +71,9 @@ class Benchmark:
         for ele in perf_only:
             value = [x for x in ele.split(",") if x]
             key = value.pop(1)
-            cleaned_perf[key] = value
+            cleaned_perf[key] = value[0]
+            if int(value[2]) < self.sampling:
+                self.sampling = int(value[2])
         return cleaned_perf
 
     def split(self):
@@ -90,10 +96,9 @@ class Benchmark:
                 for bench in value:
                     string_value = ""
                     for e in bench:
-                        print(e)
                         val_str = [str(i) for i in list(e.values())]
-                        string_value = string_value + ",".join(val_str)
-                    export.append(string_value)
+                        string_value = string_value + ",".join(val_str) + ","
+                    export.append(string_value[:-1])
                 csv_w.writerow(export)
 
     def _convert_keys_to_int(self, key: list) -> list:
@@ -198,15 +203,16 @@ if __name__ == '__main__':
         # Benching
         print("Welcome to our Benchmark! We are doing {} repetitions per metric.".format(repetitions))
         print("As configured, {}% of the results will be used as trainings data.".format(training_percentage))
-        # benchs.append(Ffmpeg(perf, repetitions))
-        # benchs.append(Zip(perf, repetitions))
+        benchs.append(Ffmpeg(perf, repetitions, training_percentage))
+        benchs.append(Zip(perf, repetitions, training_percentage))
         benchs.append(Openssl(perf, repetitions, training_percentage))
         for b in benchs:
             b.bench()
+            if b.sampling < 100:
+                print("Warning: sampling was {}".format(b.sampling))
+            b.export_to_file()
     except KeyboardInterrupt:
         print('Received Keyboard Interrupt')
-        for b in benchs:
-            b.export_to_file()
         print('Cleaning up before exit...')
         for file in os.listdir():
             if file.endswith(tuple(ext)):
