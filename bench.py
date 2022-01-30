@@ -93,13 +93,15 @@ if __name__ == '__main__':
         sys.exit("Python %s.%s or later is required.\n" % MIN_PYTHON)
     # argparse
     parser = argparse.ArgumentParser(description="The benchmark of your choice :)")
-    subparsers = parser.add_subparsers(dest='bench', help='Somewhere you have to start. Bench or import data')
+    subparsers = parser.add_subparsers(dest='bench', title='subcommands',
+                                       help='Somewhere you have to start. Bench or import files')
 
     parser_bench = subparsers.add_parser('bench')
-    parser_bench.add_argument('-e', '--export', action='store_true', help='You can export your results and import them later')
+    parser_bench.add_argument('-e', '--export', action='store_true',
+                              help='You can export your results and import them later')
 
     parser_import = subparsers.add_parser('import')
-    
+
     args = parser.parse_args()
 
     try:
