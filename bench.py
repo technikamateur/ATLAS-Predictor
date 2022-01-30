@@ -8,6 +8,12 @@ from tqdm import tqdm
 from benchmark import Benchmark
 
 
+def clean_up(ext: tuple):
+    for file in os.listdir():
+        if file.endswith(ext):
+            os.remove(file)
+
+
 class Ffmpeg(Benchmark):
     def __init__(self, *args):
         super().__init__(*args)
@@ -70,7 +76,7 @@ class Openssl(Benchmark):
             for element in tqdm(combos):
                 # We must remove empty elements. Else it will fail
                 full_cmd = self.cmd_enc + [x for x in list(element) if x] + ["-in", size + ".file"]
-                self.run_subprocess(element + [size], full_cmd)
+                self.run_subprocess(element + (size,), full_cmd)
 
     def get_metrics(self):
         return [self.enc, self.base64, self.salt, self.pbkdf2, self.sizes]
@@ -82,7 +88,7 @@ if __name__ == '__main__':
         if not os.access('/sys/devices/virtual/powercap/intel-rapl/intel-rapl:0/energy_uj', os.R_OK):
             sys.exit("No permissions. Please run \"sudoen.sh\" first.")
         # check Python version
-        MIN_PYTHON = (3, 7)
+        MIN_PYTHON = (3, 9)
         if sys.version_info < MIN_PYTHON:
             sys.exit("Python %s.%s or later is required.\n" % MIN_PYTHON)
         # Config
@@ -90,7 +96,7 @@ if __name__ == '__main__':
         training_percentage = 70
         repetitions = 5
         benchs = list()
-        ext = [".file", ".7z", ".data", ".mp4", ".tmp"]
+        ext = (".file", ".7z", ".data", ".mp4", ".tmp")
         perf = ["perf", "stat", "--field-separator", ",", "--event",
                 "context-switches,cpu-migrations,cache-misses,branch-misses"]
         # Benching
@@ -100,15 +106,15 @@ if __name__ == '__main__':
         # benchs.append(Zip(perf, repetitions, training_percentage))
         benchs.append(Openssl(perf, repetitions, training_percentage))
         for b in benchs:
-            b.bench()
+            b.import_from_file()
+            # b.bench()
             if b.sampling < 100:
                 print("Warning: sampling was {}".format(b.sampling))
-            b.export_to_file()
+            # b.export_to_file()
+        clean_up(ext)
     except KeyboardInterrupt:
         print('Received Keyboard Interrupt')
         print('Cleaning up before exit...')
-        for file in os.listdir():
-            if file.endswith(tuple(ext)):
-                os.remove(file)
+        clean_up(ext)
         print('Bye :)')
         sys.exit(0)

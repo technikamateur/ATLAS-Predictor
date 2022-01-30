@@ -1,4 +1,5 @@
 import csv
+import os
 import random
 import subprocess
 
@@ -9,6 +10,7 @@ class Benchmark:
         self.repetitions = repetitions
         self.time = ["/usr/bin/time", "-f", "%U,%S,%e", "-o", "time.tmp"]
         self.time_format = ["user", "sys", "elapsed"]
+        self.energy_format = ["package", "core"]
         self.training_percentage = training_percentage
         self.sampling = 100
 
@@ -17,19 +19,33 @@ class Benchmark:
         """
         Stores all results. Format:
         arguments -> list of runs (one element per run)
-        one run: [time, {"package": package_energy, "core": core_energy}, perf]
+        one run: {time, energy, perf}
         """
         self.output = dict()
 
         random.seed()
 
-    def bench(self):
+    def bench(self) -> None:
+        """
+        This function needs to be implemented by you. When called, it should start with the benchmark specific bench.
+        Please use run_subprocess to execute it.
+        """
         raise NotImplementedError
 
-    def get_metrics(self):
+    def get_metrics(self) -> list:
+        """
+        This function needs to be implemented by you. Returns all metrics as a list of lists.
+        """
         raise NotImplementedError
 
-    def run_subprocess(self, element, full_cmd):
+    def run_subprocess(self, element: list, full_cmd: list):
+        """
+        This function executes command for you. It measures time, energy and perf for you.
+        :param element: metric as a list. Used as key in output
+        :type element: list
+        :param full_cmd: the command to execute as a list
+        :type full_cmd: list
+        """
         for i in range(self.repetitions):
             # read energy before running
             with open("/sys/devices/virtual/powercap/intel-rapl/intel-rapl:0/energy_uj", "r") as package, open(
@@ -46,12 +62,14 @@ class Benchmark:
             # read time
             with open("time.tmp", "r") as time_file:
                 time = time_file.readline().rstrip()
+            # time to dict
             time = time.split(",")
             [float(i) for i in time]
             time = dict(zip(self.time_format, time))
+            # energy to dict
+            energy = dict(zip(self.energy_format, [package_energy, core_energy]))
             # save results
-            self.output.setdefault(element, []).append(
-                [time, {"package": package_energy, "core": core_energy}, self._extract_perf(result.stderr.decode())])
+            self.output.setdefault(element, []).append(time | energy | self._extract_perf(result.stderr.decode()))
             with open('{}.out'.format(type(self).__name__), "a") as out_file, \
                     open('{}.err'.format(type(self).__name__), "a") as err_file:
                 out_file.write(result.stdout.decode())
@@ -74,7 +92,7 @@ class Benchmark:
                 self.sampling = int(value[2])
         return cleaned_perf
 
-    def split(self):
+    def split_results(self):
         for key, value in self.output.items():
             predictor_key = self._convert_keys_to_int(key)
             # go through repetitions
@@ -93,20 +111,42 @@ class Benchmark:
                 export.append(','.join(string_keys))
                 for bench in value:
                     string_value = ""
-                    for e in bench:
-                        val_str = [str(i) for i in list(e.values())]
-                        string_value = string_value + ",".join(val_str) + ","
+                    val_str = [str(i) for i in list(bench.values())]
+                    string_value = string_value + ",".join(val_str) + ","
                     export.append(string_value[:-1])
                 csv_w.writerow(export)
+
+    def import_from_file(self):
+        with open('{}.res'.format(type(self).__name__), "r") as import_file:
+            csv_r = csv.reader(import_file, delimiter='#')
+            for idx, line in enumerate(csv_r):
+                key = line.pop(0)
+                key = self._convert_ints_to_key(key.split(','))
+                value = line
+                value_list = list()
+                for bench in value:
+                    b = bench.split(',')
+                    time_dict = dict(zip(self.time_format, [float(i) for i in b[:len(self.time_format)]]))
+                    del b[:len(self.time_format)]
+                    energy_dict = dict(zip(self.energy_format, [int(i) for i in b[:len(self.energy_format)]]))
+                    del b[:len(self.energy_format)]
+                    perf_dict = dict(zip(self.perf[-1].split(","), [int(i) for i in b]))
+                    # NOTE: 3.9+ ONLY
+                    value_list.append(time_dict | energy_dict | perf_dict)
+                self.output[key] = value_list
 
     def _convert_keys_to_int(self, key: list) -> list:
         csv_key = list()
         metrics = self.get_metrics()
-        # make all metrics numeric
         for idx, val in enumerate(key):
-            try:
-                ele = int(val)
-            except ValueError:
-                ele = metrics[idx].index(val)
+            ele = metrics[idx].index(val)
             csv_key.append(ele)
         return csv_key
+
+    def _convert_ints_to_key(self, csv_key: list) -> tuple:
+        csv_key = [int(i) for i in csv_key]
+        key_list = list()
+        metrics = self.get_metrics()
+        for idx, val in enumerate(csv_key):
+            key_list.append(metrics[idx][val])
+        return tuple(key_list)
