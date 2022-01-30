@@ -1,3 +1,4 @@
+import argparse
 import itertools
 import os
 import subprocess
@@ -83,14 +84,25 @@ class Openssl(Benchmark):
 
 
 if __name__ == '__main__':
+    # check for permissions first
+    if not os.access('/sys/devices/virtual/powercap/intel-rapl/intel-rapl:0/energy_uj', os.R_OK):
+        sys.exit("No permissions. Please run \"sudoen.sh\" first.")
+    # check Python version
+    MIN_PYTHON = (3, 9)
+    if sys.version_info < MIN_PYTHON:
+        sys.exit("Python %s.%s or later is required.\n" % MIN_PYTHON)
+    # argparse
+    parser = argparse.ArgumentParser(description="The benchmark of your choice :)")
+    subparsers = parser.add_subparsers(dest='bench', help='Somewhere you have to start. Bench or import data')
+
+    parser_bench = subparsers.add_parser('bench')
+    parser_bench.add_argument('-e', '--export', action='store_true', help='You can export your results and import them later')
+
+    parser_import = subparsers.add_parser('import')
+    
+    args = parser.parse_args()
+
     try:
-        # check for permissions first
-        if not os.access('/sys/devices/virtual/powercap/intel-rapl/intel-rapl:0/energy_uj', os.R_OK):
-            sys.exit("No permissions. Please run \"sudoen.sh\" first.")
-        # check Python version
-        MIN_PYTHON = (3, 9)
-        if sys.version_info < MIN_PYTHON:
-            sys.exit("Python %s.%s or later is required.\n" % MIN_PYTHON)
         # Config
         # percentage of trainingsdata to pick. Has to be an int between 1 and 100
         training_percentage = 70
@@ -105,12 +117,16 @@ if __name__ == '__main__':
         # benchs.append(Ffmpeg(perf, repetitions, training_percentage))
         # benchs.append(Zip(perf, repetitions, training_percentage))
         benchs.append(Openssl(perf, repetitions, training_percentage))
-        for b in benchs:
-            b.import_from_file()
-            # b.bench()
-            if b.sampling < 100:
-                print("Warning: sampling was {}".format(b.sampling))
-            # b.export_to_file()
+        if args.bench == 'bench':
+            for b in benchs:
+                b.bench()
+                if b.sampling < 100:
+                    print("Warning: sampling was {}".format(b.sampling))
+                if args.export:
+                    b.export_to_file()
+        else:
+            for b in benchs:
+                b.import_from_file()
         clean_up(ext)
     except KeyboardInterrupt:
         print('Received Keyboard Interrupt')

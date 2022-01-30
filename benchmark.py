@@ -135,13 +135,13 @@ class Benchmark:
                     value_list.append(time_dict | energy_dict | perf_dict)
                 self.output[key] = value_list
 
-    def _convert_keys_to_int(self, key: list) -> list:
+    def _convert_keys_to_int(self, key: list) -> tuple:
         csv_key = list()
         metrics = self.get_metrics()
         for idx, val in enumerate(key):
             ele = metrics[idx].index(val)
             csv_key.append(ele)
-        return csv_key
+        return tuple(csv_key)
 
     def _convert_ints_to_key(self, csv_key: list) -> tuple:
         csv_key = [int(i) for i in csv_key]
