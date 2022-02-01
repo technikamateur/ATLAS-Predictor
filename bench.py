@@ -116,19 +116,26 @@ if __name__ == '__main__':
         # Benching
         print("Welcome to our Benchmark! We are doing {} repetitions per metric.".format(repetitions))
         print("As configured, {}% of the results will be used as trainings data.".format(training_percentage))
-        # benchs.append(Ffmpeg(perf, repetitions, training_percentage))
+        benchs.append(Ffmpeg(perf, repetitions, training_percentage))
         # benchs.append(Zip(perf, repetitions, training_percentage))
-        benchs.append(Openssl(perf, repetitions, training_percentage))
+        # benchs.append(Openssl(perf, repetitions, training_percentage))
         if args.bench == 'bench':
             for b in benchs:
                 b.bench()
                 if b.sampling < 100:
                     print("Warning: sampling was {}".format(b.sampling))
                 if args.export:
+                    print("Exporting...")
                     b.export_to_file()
-        else:
+                    print("Hint: modifying perf, time, energy or the get_metrics makes the exported data useless.")
+        elif args.bench == 'import':
             for b in benchs:
                 b.import_from_file()
+                b.split_results()
+                b.train_llsp()
+        else:
+            print('You have neither bench nor import specified. Nothing to do...')
+            sys.exit(0)
         clean_up(ext)
     except KeyboardInterrupt:
         print('Received Keyboard Interrupt')

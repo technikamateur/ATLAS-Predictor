@@ -2,6 +2,9 @@ import csv
 import os
 import random
 import subprocess
+import sys
+
+from ctypes import *
 
 
 class Benchmark:
@@ -9,8 +12,11 @@ class Benchmark:
         self.perf = perf
         self.repetitions = repetitions
         self.time = ["/usr/bin/time", "-f", "%U,%S,%e", "-o", "time.tmp"]
+        ###
         self.time_format = ["user", "sys", "elapsed"]
         self.energy_format = ["package", "core"]
+        self.perf_format = self.perf[-1].split(",")
+        ###
         self.training_percentage = training_percentage
         self.sampling = 100
 
@@ -80,7 +86,7 @@ class Benchmark:
     def _extract_perf(self, stderr):
         cleaned_perf = dict()
         # determine number of perf elements
-        num_of_perf = len(self.perf[-1].split(","))
+        num_of_perf = len(self.perf_format)
         # cut output
         perf_only = stderr.splitlines()[-num_of_perf:]
         # remove empty elements
@@ -130,7 +136,7 @@ class Benchmark:
                     del b[:len(self.time_format)]
                     energy_dict = dict(zip(self.energy_format, [int(i) for i in b[:len(self.energy_format)]]))
                     del b[:len(self.energy_format)]
-                    perf_dict = dict(zip(self.perf[-1].split(","), [int(i) for i in b]))
+                    perf_dict = dict(zip(self.perf_format, [int(i) for i in b]))
                     # NOTE: 3.9+ ONLY
                     value_list.append(time_dict | energy_dict | perf_dict)
                 self.output[key] = value_list
@@ -150,3 +156,32 @@ class Benchmark:
         for idx, val in enumerate(csv_key):
             key_list.append(metrics[idx][val])
         return tuple(key_list)
+
+    def train_llsp(self):
+        # read out some informations
+        num_metrics = len(list(self.training.keys())[0])
+        num_targets = len(self.time_format) + len(self.energy_format) + len(self.perf_format)
+
+        # connect c-file
+        so_file = "helper.so"
+        my_functions = CDLL(so_file)
+        # init llsp
+        my_functions.initialize(c_size_t(num_metrics))
+
+        #test
+        predic = (c_double * num_metrics)(*[2,1,4])
+
+        # start training
+        for key, value in self.training.items():
+            metric = (c_double * num_metrics)(*list(key))
+            for rep in value:
+                target = c_double(rep["elapsed"])
+                if key == (2,1,4):
+                    print(','.join([str(i) for i in metric]))
+                    print(target)
+                    my_functions.add(metric, target)
+        if my_functions.solve() != 1:
+            print("Prediction failed")
+            sys.exit(2)
+        my_functions.predict.restype = c_double
+        print(my_functions.predict(predic))
