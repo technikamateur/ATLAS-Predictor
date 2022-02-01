@@ -1,6 +1,10 @@
-CC = gcc
-CFLAGS = -fPIC -shared -Iinclude
-HEADERS = llsp.h
+CC=gcc
+CFLAGS=-fPIC -shared -Iinclude
+HEADERS=llsp.h
+RM=rm -r
 
-helper: helper.c llsp.c $(HEADERS)
-	$(CC) $(CFLAGS) -o helper.so helper.c llsp.c
+all: helper.so
+clean:
+	$(RM) *.so
+helper.so: helper.c llsp.c $(HEADERS)
+	$(CC) $(CFLAGS) $^ -o $@
