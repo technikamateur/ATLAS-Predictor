@@ -132,3 +132,7 @@ dmypy.json
 .idea/
 *.txt
 *.file
+*.o
+*.so
+*.out
+*.err

@@ -22,6 +22,7 @@ class Benchmark:
 
         self.training = dict()
         self.control = dict()
+        self.predicted = dict()
         """
         Stores all results. Format:
         arguments -> list of runs (one element per run)
@@ -33,14 +34,14 @@ class Benchmark:
 
     def bench(self) -> None:
         """
-        This function needs to be implemented by you. When called, it should start with the benchmark specific bench.
+        This function needs to be implemented. When called, it should start with the benchmark specific bench.
         Please use run_subprocess to execute it.
         """
         raise NotImplementedError
 
     def get_metrics(self) -> list:
         """
-        This function needs to be implemented by you. Returns all metrics as a list of lists.
+        This function needs to be implemented. Returns all metrics as a list of lists.
         """
         raise NotImplementedError
 
@@ -141,7 +142,7 @@ class Benchmark:
                     value_list.append(time_dict | energy_dict | perf_dict)
                 self.output[key] = value_list
 
-    def _convert_keys_to_int(self, key: list) -> tuple:
+    def _convert_keys_to_int(self, key: tuple) -> tuple:
         csv_key = list()
         metrics = self.get_metrics()
         for idx, val in enumerate(key):
@@ -165,23 +166,25 @@ class Benchmark:
         # connect c-file
         so_file = "helper.so"
         my_functions = CDLL(so_file)
+        my_functions.predict.restype = c_double
         # init llsp
         my_functions.initialize(c_size_t(num_metrics))
-
-        #test
-        predic = (c_double * num_metrics)(*[2,1,4])
-
         # start training
         for key, value in self.training.items():
             metric = (c_double * num_metrics)(*list(key))
             for rep in value:
                 target = c_double(rep["elapsed"])
-                if key == (2,1,4):
-                    print(','.join([str(i) for i in metric]))
-                    print(target)
-                    my_functions.add(metric, target)
+                my_functions.add(metric, target)
+        # solving
         if my_functions.solve() != 1:
             print("Prediction failed")
             sys.exit(2)
-        my_functions.predict.restype = c_double
-        print(my_functions.predict(predic))
+        # if solving works, start predicting
+        for key, value in self.control.items():
+            metric = (c_double * num_metrics)(*list(key))
+            prediction = my_functions.predict(metric)
+            new_key = self._convert_ints_to_key(key)
+            self.predicted.setdefault(new_key, dict())["elapsed"] = prediction
+        # remove everything
+        my_functions.dispose()
+        print(self.predicted)

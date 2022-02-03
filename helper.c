@@ -1,4 +1,3 @@
-#define AGING_FACTOR 0
 #include "llsp.h"
 
 llsp_t *predictor;
@@ -27,4 +26,9 @@ int solve(){
 double predict(double metric[metric_size]) {
     double result = llsp_predict(predictor, metric);
     return result;
+}
+
+void dispose() {
+	llsp_dispose(predictor);
+	return;
 }
