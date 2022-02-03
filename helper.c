@@ -1,3 +1,4 @@
+#define AGING_FACTOR 0
 #include "llsp.h"
 
 llsp_t *predictor;
@@ -15,7 +16,7 @@ void add(double metric[metric_size], double target) {
 }
 
 int solve(){
-    double* result = llsp_solve(predictor);
+    const double* result = llsp_solve(predictor);
     if (result == NULL) {
         return 0;
     } else {
