@@ -95,7 +95,8 @@ class Benchmark:
             value = [x for x in ele.split(",") if x]
             key = value.pop(1)
             cleaned_perf[key] = value[0]
-            if int(value[2]) < self.sampling:
+            perf_sampling = value[2].split(".")
+            if int(perf_sampling[0]) < self.sampling:
                 self.sampling = int(value[2])
         return cleaned_perf
 
