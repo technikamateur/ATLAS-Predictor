@@ -133,6 +133,7 @@ if __name__ == '__main__':
                 b.import_from_file()
                 b.split_results()
                 b.train_llsp()
+                b.plot()
         else:
             print('You have neither bench nor import specified. Nothing to do...')
             sys.exit(0)

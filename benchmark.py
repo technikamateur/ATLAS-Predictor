@@ -3,6 +3,7 @@ import os
 import random
 import subprocess
 import sys
+import matplotlib.pyplot as plt
 
 from ctypes import *
 
@@ -84,7 +85,7 @@ class Benchmark:
             # clear
             os.remove("time.tmp")
 
-    def _extract_perf(self, stderr):
+    def _extract_perf(self, stderr) -> dict:
         cleaned_perf = dict()
         # determine number of perf elements
         num_of_perf = len(self.perf_format)
@@ -100,7 +101,7 @@ class Benchmark:
                 self.sampling = int(value[2])
         return cleaned_perf
 
-    def split_results(self):
+    def split_results(self) -> None:
         for key, value in self.output.items():
             predictor_key = self._convert_keys_to_int(key)
             # go through repetitions
@@ -110,7 +111,7 @@ class Benchmark:
                 else:
                     self.control.setdefault(predictor_key, []).append(bench)
 
-    def export_to_file(self):
+    def export_to_file(self) -> None:
         with open('{}.res'.format(type(self).__name__), "w") as export_file:
             csv_w = csv.writer(export_file, delimiter='#')
             for key, value in self.output.items():
@@ -124,7 +125,7 @@ class Benchmark:
                     export.append(string_value[:-1])
                 csv_w.writerow(export)
 
-    def import_from_file(self):
+    def import_from_file(self) -> None:
         with open('{}.res'.format(type(self).__name__), "r") as import_file:
             csv_r = csv.reader(import_file, delimiter='#')
             for idx, line in enumerate(csv_r):
@@ -159,33 +160,110 @@ class Benchmark:
             key_list.append(metrics[idx][val])
         return tuple(key_list)
 
-    def train_llsp(self):
+    def train_llsp(self) -> None:
         # read out some informations
         num_metrics = len(list(self.training.keys())[0])
-        num_targets = len(self.time_format) + len(self.energy_format) + len(self.perf_format)
 
         # connect c-file
         so_file = "helper.so"
         my_functions = CDLL(so_file)
         my_functions.predict.restype = c_double
-        # init llsp
-        my_functions.initialize(c_size_t(num_metrics))
-        # start training
-        for key, value in self.training.items():
-            metric = (c_double * num_metrics)(*list(key))
-            for rep in value:
-                target = c_double(rep["elapsed"])
-                my_functions.add(metric, target)
-        # solving
-        if my_functions.solve() != 1:
-            print("Prediction failed")
-            sys.exit(2)
-        # if solving works, start predicting
-        for key, value in self.control.items():
-            metric = (c_double * num_metrics)(*list(key))
-            prediction = my_functions.predict(metric)
-            new_key = self._convert_ints_to_key(key)
-            self.predicted.setdefault(new_key, dict())["elapsed"] = prediction
-        # remove everything
-        my_functions.dispose()
-        print(self.predicted)
+        my_functions.solve.restype = c_int
+
+        for param in self.time_format + self.energy_format + self.perf_format:
+            # init llsp
+            my_functions.initialize(c_size_t(num_metrics))
+            # start training
+            for key, value in self.training.items():
+                metric = (c_double * num_metrics)(*list(key))
+                for rep in value:
+                    target = c_double(rep[param])
+                    my_functions.add(metric, target)
+            # solving
+            if my_functions.solve() != 1:
+                print("Prediction failed")
+                sys.exit(2)
+            # if solving works, start predicting
+            for key, value in self.control.items():
+                metric = (c_double * num_metrics)(*list(key))
+                prediction = my_functions.predict(metric)
+                new_key = self._convert_ints_to_key(key)
+                self.predicted.setdefault(new_key, dict())[param] = prediction
+            # remove everything
+            my_functions.dispose()
+
+    def plot(self):
+        plt.style.use('ggplot')
+        fig, ax = plt.subplots()
+        x_axes = list()
+        y_axes = list()
+        metrics = list()
+        for idx, metric in enumerate(list(self.predicted.keys())):
+            value = self.predicted[metric]
+            metrics.append(",".join(metric))
+            x_axes.append(idx)
+            y_axes.append(value["elapsed"])
+        ax.plot(x_axes, y_axes, label="predicted values")
+        x_axes = list()
+        y_axes = list()
+        y2_axes = list()
+        for idx, metric in enumerate(list(self.predicted.keys())):
+            x_axes.append(idx)
+            y_axes.append(self._get_min_max(metric, "elapsed")[0])
+            y2_axes.append(self._get_min_max(metric, "elapsed")[1])
+        ax.fill_between(x_axes, y_axes, y2_axes)
+        ax.plot(x_axes, y_axes, label="min values")
+        fig.legend()
+        ax.set_ylabel("time in s")
+        ax.set_xticks(x_axes)
+        ax.set_xticklabels(metrics, rotation='vertical', fontsize=12)
+        fig.tight_layout()
+        plt.rcParams["figure.autolayout"] = True
+        fig.set_size_inches(35,5)
+        fig.savefig("elapsed.png", dpi=150)
+
+        plt.style.use('ggplot')
+        fig, ax = plt.subplots()
+        x_axes = list()
+        y_axes = list()
+        metrics = list()
+        for idx, metric in enumerate(list(self.predicted.keys())):
+            value = self.predicted[metric]
+            metrics.append(",".join(metric))
+            x_axes.append(idx)
+            y_axes.append(value["cpu-migrations"])
+        ax.plot(x_axes, y_axes, label="predicted values")
+        x_axes = list()
+        y_axes = list()
+        y2_axes = list()
+        for idx, metric in enumerate(list(self.predicted.keys())):
+            x_axes.append(idx)
+            y_axes.append(self._get_min_max(metric, "cpu-migrations")[0])
+            y2_axes.append(self._get_min_max(metric, "cpu-migrations")[1])
+        ax.fill_between(x_axes, y_axes, y2_axes)
+        ax.plot(x_axes, y_axes, label="min values")
+        ax.plot(x_axes, y2_axes, label="max values")
+        fig.legend()
+        ax.set_ylabel("wtf")
+        ax.set_xticks(x_axes)
+        ax.set_xticklabels(metrics, rotation='vertical', fontsize=12)
+        fig.tight_layout()
+        plt.rcParams["figure.autolayout"] = True
+        fig.set_size_inches(35, 5)
+        fig.savefig("cpu-migrations.png", dpi=150)
+
+    def _get_min_max(self, metric: tuple, key: str) -> tuple:
+        """
+        Returns the min and max value for given metric and key as a tuple.
+        :param metric: The metric you are interested in
+        :type metric: tuple
+        :param key: The key you are interested in
+        :type key: str
+        :return: (min, max)
+        :rtype: tuple
+        """
+        all_values = list()
+        bench = self.output[metric]
+        for rep in bench:
+            all_values.append(rep[key])
+        return min(all_values), max(all_values)
