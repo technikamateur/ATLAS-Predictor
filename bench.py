@@ -93,14 +93,18 @@ if __name__ == '__main__':
         sys.exit("Python %s.%s or later is required.\n" % MIN_PYTHON)
     # argparse
     parser = argparse.ArgumentParser(description="The benchmark of your choice :)")
+    parser.add_argument('-r', '--repetitions', type=int, required=True,
+                        help='Specifies the number of times a benchmark should be or has been repeated.')
+
     subparsers = parser.add_subparsers(dest='bench', title='subcommands',
                                        help='Somewhere you have to start. Bench or import files')
-
     parser_bench = subparsers.add_parser('bench')
     parser_bench.add_argument('-e', '--export', action='store_true',
                               help='You can export your results and import them later')
 
     parser_import = subparsers.add_parser('import')
+    parser_import.add_argument('-t', '--training', type=int, choices=range(101), required=True,
+                               help='A value between 1 and 100. Used to use a part of benched data as trainings data')
     parser_import.add_argument('-g', '--graphs', action='store_true',
                                help='You will get beautiful graphs :)')
 
@@ -109,19 +113,18 @@ if __name__ == '__main__':
     try:
         # Config
         # percentage of trainingsdata to pick. Has to be an int between 1 and 100
-        training_percentage = 70
-        repetitions = 5
+        training_percentage = args.repetitions
+        repetitions = args.training
         benchs = list()
         ext = (".file", ".7z", ".data", ".mp4", ".tmp")
         perf = ["perf", "stat", "--field-separator", ",", "--event",
                 "context-switches,cpu-migrations,cache-misses,branch-misses"]
         # Benching
-        print("Welcome to our Benchmark! We are doing {} repetitions per metric.".format(repetitions))
-        print("As configured, {}% of the results will be used as trainings data.".format(training_percentage))
         benchs.append(Ffmpeg(perf, repetitions, training_percentage))
         benchs.append(Zip(perf, repetitions, training_percentage))
         benchs.append(Openssl(perf, repetitions, training_percentage))
         if args.bench == 'bench':
+            print("Welcome to our Benchmark! We are doing {} repetitions per metric.".format(repetitions))
             for b in benchs:
                 b.bench()
                 if b.sampling < 100:
@@ -131,6 +134,7 @@ if __name__ == '__main__':
                     b.export_to_file()
                     print("Hint: modifying perf, time, energy or the get_metrics makes the exported data useless.")
         elif args.bench == 'import':
+            print("As configured, {}% of the results will be used as trainings data.".format(training_percentage))
             for b in benchs:
                 b.import_from_file()
                 b.split_results()
