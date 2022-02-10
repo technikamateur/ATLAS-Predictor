@@ -1,3 +1,4 @@
+#define AGING_FACTOR 0
 #include "llsp.h"
 
 llsp_t *predictor;

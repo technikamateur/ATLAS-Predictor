@@ -3,9 +3,10 @@ import os
 import random
 import subprocess
 import sys
-import matplotlib.pyplot as plt
-
 from ctypes import *
+
+import matplotlib.pyplot as plt
+from tqdm import tqdm
 
 
 class Benchmark:
@@ -192,65 +193,28 @@ class Benchmark:
             # remove everything
             my_functions.dispose()
 
-    def plot(self):
-        plt.style.use('ggplot')
-        fig, ax = plt.subplots()
-        x_axes = list()
-        y_axes = list()
-        metrics = list()
-        for idx, metric in enumerate(list(self.predicted.keys())):
-            value = self.predicted[metric]
-            metrics.append(",".join(metric))
-            x_axes.append(idx)
-            y_axes.append(value["elapsed"])
-        ax.plot(x_axes, y_axes, label="predicted values")
-        x_axes = list()
-        y_axes = list()
-        y2_axes = list()
-        for idx, metric in enumerate(list(self.predicted.keys())):
-            x_axes.append(idx)
-            y_axes.append(self._get_min_max(metric, "elapsed")[0])
-            y2_axes.append(self._get_min_max(metric, "elapsed")[1])
-        ax.fill_between(x_axes, y_axes, y2_axes)
-        ax.plot(x_axes, y_axes, label="min values")
-        fig.legend()
-        ax.set_ylabel("time in s")
-        ax.set_xticks(x_axes)
-        ax.set_xticklabels(metrics, rotation='vertical', fontsize=12)
-        fig.tight_layout()
-        plt.rcParams["figure.autolayout"] = True
-        fig.set_size_inches(35,5)
-        fig.savefig("elapsed.png", dpi=150)
-
-        plt.style.use('ggplot')
-        fig, ax = plt.subplots()
-        x_axes = list()
-        y_axes = list()
-        metrics = list()
-        for idx, metric in enumerate(list(self.predicted.keys())):
-            value = self.predicted[metric]
-            metrics.append(",".join(metric))
-            x_axes.append(idx)
-            y_axes.append(value["cpu-migrations"])
-        ax.plot(x_axes, y_axes, label="predicted values")
-        x_axes = list()
-        y_axes = list()
-        y2_axes = list()
-        for idx, metric in enumerate(list(self.predicted.keys())):
-            x_axes.append(idx)
-            y_axes.append(self._get_min_max(metric, "cpu-migrations")[0])
-            y2_axes.append(self._get_min_max(metric, "cpu-migrations")[1])
-        ax.fill_between(x_axes, y_axes, y2_axes)
-        ax.plot(x_axes, y_axes, label="min values")
-        ax.plot(x_axes, y2_axes, label="max values")
-        fig.legend()
-        ax.set_ylabel("wtf")
-        ax.set_xticks(x_axes)
-        ax.set_xticklabels(metrics, rotation='vertical', fontsize=12)
-        fig.tight_layout()
-        plt.rcParams["figure.autolayout"] = True
-        fig.set_size_inches(35, 5)
-        fig.savefig("cpu-migrations.png", dpi=150)
+    def plot(self) -> None:
+        for param in tqdm(self.time_format + self.energy_format + self.perf_format):
+            plt.style.use('ggplot')
+            fig, ax = plt.subplots()
+            x_axes, y_axes, min_axes, max_axes, metrics = (list() for i in range(5))
+            for idx, metric in enumerate(list(self.predicted.keys())):
+                value = self.predicted[metric]
+                metrics.append(",".join(metric))
+                x_axes.append(idx)
+                y_axes.append(value[param])
+                min_axes.append(self._get_min_max(metric, param)[0])
+                max_axes.append(self._get_min_max(metric, param)[1])
+            ax.plot(x_axes, y_axes, 'o-', label="predicted values")
+            ax.fill_between(x_axes, min_axes, max_axes, color='tab:blue', alpha=0.8, label="measured min to max corridor")
+            fig.legend(loc="upper center")
+            ax.set_ylabel(param)
+            ax.set_xticks(x_axes)
+            ax.set_xticklabels(metrics, rotation='vertical', fontsize=12)
+            fig.tight_layout()
+            plt.rcParams["figure.autolayout"] = True
+            fig.set_size_inches(35, 5)
+            fig.savefig("pics/{}_{}.svg".format(type(self).__name__, param))
 
     def _get_min_max(self, metric: tuple, key: str) -> tuple:
         """

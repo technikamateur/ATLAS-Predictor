@@ -101,6 +101,8 @@ if __name__ == '__main__':
                               help='You can export your results and import them later')
 
     parser_import = subparsers.add_parser('import')
+    parser_import.add_argument('-g', '--graphs', action='store_true',
+                               help='You will get beautiful graphs :)')
 
     args = parser.parse_args()
 
@@ -117,8 +119,8 @@ if __name__ == '__main__':
         print("Welcome to our Benchmark! We are doing {} repetitions per metric.".format(repetitions))
         print("As configured, {}% of the results will be used as trainings data.".format(training_percentage))
         benchs.append(Ffmpeg(perf, repetitions, training_percentage))
-        # benchs.append(Zip(perf, repetitions, training_percentage))
-        # benchs.append(Openssl(perf, repetitions, training_percentage))
+        benchs.append(Zip(perf, repetitions, training_percentage))
+        benchs.append(Openssl(perf, repetitions, training_percentage))
         if args.bench == 'bench':
             for b in benchs:
                 b.bench()
@@ -133,7 +135,9 @@ if __name__ == '__main__':
                 b.import_from_file()
                 b.split_results()
                 b.train_llsp()
-                b.plot()
+                if args.graphs:
+                    print("Generating Graphs...")
+                    b.plot()
         else:
             print('You have neither bench nor import specified. Nothing to do...')
             sys.exit(0)
