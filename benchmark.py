@@ -185,11 +185,10 @@ class Benchmark:
                 print("Prediction failed")
                 sys.exit(2)
             # if solving works, start predicting
-            for key, value in self.control.items():
-                metric = (c_double * num_metrics)(*list(key))
+            for key, value in self.output.items():
+                metric = (c_double * num_metrics)(*list(self._convert_keys_to_int(key)))
                 prediction = my_functions.predict(metric)
-                new_key = self._convert_ints_to_key(key)
-                self.predicted.setdefault(new_key, dict())[param] = prediction
+                self.predicted.setdefault(key, dict())[param] = prediction
             # remove everything
             my_functions.dispose()
 
@@ -206,15 +205,17 @@ class Benchmark:
                 min_axes.append(self._get_min_max(metric, param)[0])
                 max_axes.append(self._get_min_max(metric, param)[1])
             ax.plot(x_axes, y_axes, 'o-', label="predicted values")
-            ax.fill_between(x_axes, min_axes, max_axes, color='tab:blue', alpha=0.8, label="measured min to max corridor")
+            ax.fill_between(x_axes, min_axes, max_axes, color='tab:blue', alpha=0.8,
+                            label="measured min to max corridor")
             fig.legend(loc="upper center")
             ax.set_ylabel(param)
             ax.set_xticks(x_axes)
             ax.set_xticklabels(metrics, rotation='vertical', fontsize=12)
             fig.tight_layout()
             plt.rcParams["figure.autolayout"] = True
-            fig.set_size_inches(35, 5)
+            fig.set_size_inches(0.2 * len(metrics), 6)
             fig.savefig("pics/{}_{}.svg".format(type(self).__name__, param))
+            plt.close()
 
     def _get_min_max(self, metric: tuple, key: str) -> tuple:
         """
