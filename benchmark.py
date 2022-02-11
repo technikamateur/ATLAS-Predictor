@@ -112,9 +112,9 @@ class Benchmark:
                 cleaned_perf[key] = int(value[0])
             else:
                 cleaned_perf[key] = float(value[0])
-            perf_sampling = value[4].split(".")
+            perf_sampling = value[3].split(".")
             if int(perf_sampling[0]) < self.sampling:
-                self.sampling = int(value[4])
+                self.sampling = int(perf_sampling[0])
         return cleaned_perf
 
     def split_results(self, training_percentage: int) -> None:
