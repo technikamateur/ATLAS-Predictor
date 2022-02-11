@@ -10,29 +10,33 @@ from tqdm import tqdm
 
 
 class Benchmark:
-    def __init__(self, perf, repetitions, training_percentage):
-        self.perf = perf
-        self.repetitions = repetitions
-        self.time = ["/usr/bin/time", "-f", "%U,%S,%e", "-o", "time.tmp"]
-        ###
-        self.time_format = ["user", "sys", "elapsed"]
-        self.energy_format = ["package", "core"]
-        self.perf_format = self.perf[-1].split(",")
-        ###
-        self.training_percentage = training_percentage
+    def __init__(self, perf, repetitions, intel=False):
+        self.training_percentage = None
         self.sampling = 100
-
+        self.repetitions = repetitions
+        self.intel = intel
+        random.seed()
+        # time
+        self.time = ["/usr/bin/time", "-f", "%U,%S,%e", "-o", "time.tmp"]
+        self.time_format = ["user", "sys", "elapsed"]
+        # normal energy
+        self.energy_format = ["energy-pkg", "energy-cores"]
+        # perf for energy works on intel
+        self.perf_energy = ["perf", "stat", "--field-separator", ",", "-e", "energy-pkg,energy-cores"]
+        if self.intel:
+            self.perf = self.perf_energy + perf
+        else:
+            self.perf = perf
+        self.perf_format = self.perf[-1].split(",")
+        # dicts for results
+        self.output = dict()
         self.training = dict()
         self.control = dict()
         self.predicted = dict()
-        """
-        Stores all results. Format:
-        arguments -> list of runs (one element per run)
-        one run: {time, energy, perf}
-        """
-        self.output = dict()
-
-        random.seed()
+        # intel rapl files
+        self.intel_rapl = {"package": "/sys/devices/virtual/powercap/intel-rapl/intel-rapl:0/energy_uj",
+                           "core": "/sys/devices/virtual/powercap/intel-rapl/intel-rapl:0/intel-rapl:0:0/energy_uj",
+                           "max_energy": "/sys/devices/virtual/powercap/intel-rapl/intel-rapl:0/max_energy_range_uj"}
 
     def bench(self) -> None:
         """
@@ -57,17 +61,17 @@ class Benchmark:
         """
         for i in range(self.repetitions):
             # read energy before running
-            with open("/sys/devices/virtual/powercap/intel-rapl/intel-rapl:0/energy_uj", "r") as package, open(
-                    "/sys/devices/virtual/powercap/intel-rapl/intel-rapl:0/intel-rapl:0:0/energy_uj", "r") as core:
+            with open(self.intel_rapl["package"], "r") as package, open(self.intel_rapl["core"], "r") as core:
                 package_energy = int(package.readline().rstrip())
                 core_energy = int(core.readline().rstrip())
             # execute command
             result = subprocess.run(self.perf + self.time + full_cmd, capture_output=True)
             # read energy again
-            with open("/sys/devices/virtual/powercap/intel-rapl/intel-rapl:0/energy_uj", "r") as package, open(
-                    "/sys/devices/virtual/powercap/intel-rapl/intel-rapl:0/intel-rapl:0:0/energy_uj", "r") as core:
-                package_energy = int(package.readline().rstrip()) - package_energy
-                core_energy = int(core.readline().rstrip()) - core_energy
+            with open(self.intel_rapl["package"], "r") as package, open(self.intel_rapl["core"], "r") as core, open(
+                self.intel_rapl["max_energy"], "r") as max_en:
+                max_energy = int(max_en.readline().rstrip())
+                package_energy = (int(package.readline().rstrip()) - package_energy + max_energy) % max_energy
+                core_energy = (int(core.readline().rstrip()) - core_energy + max_energy) % max_energy
             # read time
             with open("time.tmp", "r") as time_file:
                 time = time_file.readline().rstrip()
@@ -75,10 +79,15 @@ class Benchmark:
             time = time.split(",")
             [float(i) for i in time]
             time = dict(zip(self.time_format, time))
+            # extract perf
+            perf_dict = self._extract_perf(result.stderr.decode())
             # energy to dict
-            energy = dict(zip(self.energy_format, [package_energy, core_energy]))
+            if self.intel:
+                energy = dict(zip(self.energy_format, [perf_dict.pop("energy-pkg"), perf_dict.pop("energy-cores")]))
+            else:
+                energy = dict(zip(self.energy_format, [package_energy, core_energy]))
             # save results
-            self.output.setdefault(element, []).append(time | energy | self._extract_perf(result.stderr.decode()))
+            self.output.setdefault(element, []).append(time | energy | perf_dict)
             with open('{}.out'.format(type(self).__name__), "a") as out_file, \
                     open('{}.err'.format(type(self).__name__), "a") as err_file:
                 out_file.write(result.stdout.decode())
@@ -89,7 +98,10 @@ class Benchmark:
     def _extract_perf(self, stderr) -> dict:
         cleaned_perf = dict()
         # determine number of perf elements
-        num_of_perf = len(self.perf_format)
+        if self.intel:
+            num_of_perf = len(self.perf_format) + len(self.energy_format)
+        else:
+            num_of_perf = len(self.perf_format)
         # cut output
         perf_only = stderr.splitlines()[-num_of_perf:]
         # remove empty elements
@@ -102,7 +114,8 @@ class Benchmark:
                 self.sampling = int(value[2])
         return cleaned_perf
 
-    def split_results(self) -> None:
+    def split_results(self, training_percentage: int) -> None:
+        self.training_percentage = training_percentage
         for key, value in self.output.items():
             predictor_key = self._convert_keys_to_int(key)
             # go through repetitions

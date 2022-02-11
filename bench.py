@@ -16,8 +16,8 @@ def clean_up(ext: tuple):
 
 
 class Ffmpeg(Benchmark):
-    def __init__(self, *args):
-        super().__init__(*args)
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         self.cmd = ["ffmpeg", "-y", "-f", "image2", "-i", "raw/life_%06d.pbm", "-vf", "scale=1080:1080"]
         self.quality_steps = ["0", "10", "20", "30", "40", "50"]
         self.fps = ["1", "5", "10", "15", "25"]
@@ -25,8 +25,7 @@ class Ffmpeg(Benchmark):
         self.preset = ["veryfast", "faster", "fast", "medium", "slow", "slower", "veryslow"]
 
     def bench(self):
-        combos = [self.quality_steps, self.fps, self.preset]
-        combos = list(itertools.product(*combos))
+        combos = list(itertools.product(*self.get_metrics()))
         print("Benching ffmpeg:")
         for element in tqdm(combos):
             full_cmd = self.cmd + ["-crf", element[0]] + ["-r", element[1]] + ["-preset", element[2]] + ["result.mp4"]
@@ -37,17 +36,16 @@ class Ffmpeg(Benchmark):
 
 
 class Zip(Benchmark):
-    def __init__(self, *args):
-        super().__init__(*args)
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         self.cmd = ["7z", "a", "-aoa", "-t7z"]
         self.cmd_two = ["output.7z", "raw/*.pbm", "-r"]
-        self.x = ["0", "1", "3", "5", "7", "9"]  # 0=copy. should be same time with every compression method
+        self.x = ["0", "1", "3", "5", "7", "9"]
         self.mt = ["on", "off"]
         self.algo = ["lzma", "lzma2", "bzip2", "deflate"]
 
     def bench(self):
-        combos = [self.x, self.mt, self.algo]
-        combos = list(itertools.product(*combos))
+        combos = list(itertools.product(*self.get_metrics()))
         print("Benching 7zip:")
         for element in tqdm(combos):
             full_cmd = self.cmd + ["-mx=" + element[0]] + ["-mmt=" + element[1]] + ["-m0=" + element[2]] + self.cmd_two
@@ -58,8 +56,8 @@ class Zip(Benchmark):
 
 
 class Openssl(Benchmark):
-    def __init__(self, *args):
-        super().__init__(*args)
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         self.cmd_enc = ["openssl", "enc", "-pass", "pass:1234", "-out", "encrypted.data"]
         self.cmd_dec = ["openssl", "enc", "-d", "-pass", "pass:1234"]
         self.salt = ["-salt", "-nosalt"]
@@ -69,8 +67,7 @@ class Openssl(Benchmark):
         self.sizes = ["10", "100", "1000", "10000"]
 
     def bench(self):
-        combos = [self.enc, self.base64, self.salt, self.pbkdf2]
-        combos = list(itertools.product(*combos))
+        combos = list(itertools.product(*self.get_metrics()[:-1]))
         print("Benching Openssl:")
         for size in self.sizes:
             subprocess.run(["dd", "if=/dev/zero", "of=" + size + ".file", "bs=1M", "count=" + size])
@@ -84,17 +81,11 @@ class Openssl(Benchmark):
 
 
 if __name__ == '__main__':
-    # check for permissions first
-    if not os.access('/sys/devices/virtual/powercap/intel-rapl/intel-rapl:0/energy_uj', os.R_OK):
-        sys.exit("No permissions. Please run \"sudoen.sh\" first.")
-    # check Python version
-    MIN_PYTHON = (3, 9)
-    if sys.version_info < MIN_PYTHON:
-        sys.exit("Python %s.%s or later is required.\n" % MIN_PYTHON)
     # argparse
     parser = argparse.ArgumentParser(description="The benchmark of your choice :)")
     parser.add_argument('-r', '--repetitions', type=int, required=True,
                         help='Specifies the number of times a benchmark should be or has been repeated.')
+    parser.add_argument('--intel', action='store_true', help='Set this flag if running on Intel platform')
 
     subparsers = parser.add_subparsers(dest='bench', title='subcommands',
                                        help='Somewhere you have to start. Bench or import files')
@@ -110,19 +101,27 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
+    # check for permissions first
+    if not os.access('/sys/devices/virtual/powercap/intel-rapl/intel-rapl:0/energy_uj', os.R_OK):
+        sys.exit("No permissions. Please run \"sudoen.sh\" first.")
+    # check Python version
+    MIN_PYTHON = (3, 9)
+    if sys.version_info < MIN_PYTHON:
+        sys.exit("Python %s.%s or later is required.\n" % MIN_PYTHON)
+
+    ###
+
+    repetitions = args.repetitions
+    benchs = list()
+    ext = (".file", ".7z", ".data", ".mp4", ".tmp")
+    perf = ["perf", "stat", "--field-separator", ",", "--event",
+            "context-switches,cpu-migrations,cache-misses,branch-misses"]
+
     try:
-        # Config
-        # percentage of trainingsdata to pick. Has to be an int between 1 and 100
-        training_percentage = args.repetitions
-        repetitions = args.training
-        benchs = list()
-        ext = (".file", ".7z", ".data", ".mp4", ".tmp")
-        perf = ["perf", "stat", "--field-separator", ",", "--event",
-                "context-switches,cpu-migrations,cache-misses,branch-misses"]
         # Benching
-        benchs.append(Ffmpeg(perf, repetitions, training_percentage))
-        benchs.append(Zip(perf, repetitions, training_percentage))
-        benchs.append(Openssl(perf, repetitions, training_percentage))
+        benchs.append(Ffmpeg(perf, repetitions, intel=args.intel))
+        benchs.append(Zip(perf, repetitions, intel=args.intel))
+        benchs.append(Openssl(perf, repetitions, intel=args.intel))
         if args.bench == 'bench':
             print("Welcome to our Benchmark! We are doing {} repetitions per metric.".format(repetitions))
             for b in benchs:
@@ -134,10 +133,10 @@ if __name__ == '__main__':
                     b.export_to_file()
                     print("Hint: modifying perf, time, energy or the get_metrics makes the exported data useless.")
         elif args.bench == 'import':
-            print("As configured, {}% of the results will be used as trainings data.".format(training_percentage))
+            print("As configured, {}% of the results will be used as trainings data.".format(args.training))
             for b in benchs:
                 b.import_from_file()
-                b.split_results()
+                b.split_results(args.training)
                 b.train_llsp()
                 if args.graphs:
                     print("Generating Graphs...")
