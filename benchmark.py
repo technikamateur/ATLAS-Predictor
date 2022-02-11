@@ -106,12 +106,15 @@ class Benchmark:
         perf_only = stderr.splitlines()[-num_of_perf:]
         # remove empty elements
         for ele in perf_only:
-            value = [x for x in ele.split(",") if x]
-            key = value.pop(1)
-            cleaned_perf[key] = value[0]
-            perf_sampling = value[2].split(".")
+            value = ele.split(",")
+            key = value.pop(2)
+            if "energy" not in key:
+                cleaned_perf[key] = int(value[0])
+            else:
+                cleaned_perf[key] = float(value[0])
+            perf_sampling = value[4].split(".")
             if int(perf_sampling[0]) < self.sampling:
-                self.sampling = int(value[2])
+                self.sampling = int(value[4])
         return cleaned_perf
 
     def split_results(self, training_percentage: int) -> None:
