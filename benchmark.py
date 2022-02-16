@@ -154,7 +154,7 @@ class Benchmark:
                     b = bench.split(',')
                     time_dict = dict(zip(self.time_format, [float(i) for i in b[:len(self.time_format)]]))
                     del b[:len(self.time_format)]
-                    energy_dict = dict(zip(self.energy_format, [int(i) for i in b[:len(self.energy_format)]]))
+                    energy_dict = dict(zip(self.energy_format, [float(i) for i in b[:len(self.energy_format)]]))
                     del b[:len(self.energy_format)]
                     perf_dict = dict(zip(self.perf_format, [int(i) for i in b]))
                     # NOTE: 3.9+ ONLY
