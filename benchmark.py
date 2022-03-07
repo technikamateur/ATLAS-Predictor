@@ -10,11 +10,12 @@ from tqdm import tqdm
 
 
 class Benchmark:
-    def __init__(self, perf, repetitions, intel=False):
+    def __init__(self, perf, repetitions, intel=False, one_hot=False):
         self.training_percentage = None
         self.sampling = 100
         self.repetitions = repetitions
         self.intel = intel
+        self.one_hot = one_hot
         random.seed()
         # time
         self.time = ["/usr/bin/time", "-f", "%U,%S,%e", "-o", "time.tmp"]
@@ -37,6 +38,7 @@ class Benchmark:
         self.intel_rapl = {"package": "/sys/devices/virtual/powercap/intel-rapl/intel-rapl:0/energy_uj",
                            "core": "/sys/devices/virtual/powercap/intel-rapl/intel-rapl:0/intel-rapl:0:0/energy_uj",
                            "max_energy": "/sys/devices/virtual/powercap/intel-rapl/intel-rapl:0/max_energy_range_uj"}
+        self._internal_checks()
 
     def bench(self) -> None:
         """
@@ -50,6 +52,14 @@ class Benchmark:
         This function needs to be implemented. Returns all metrics as a list of lists.
         """
         raise NotImplementedError
+
+    @staticmethod
+    def get_one_hot() -> list:
+        raise NotImplementedError
+
+    def _internal_checks(self):
+        if len(self.get_metrics()) != len(self.get_one_hot()):
+            sys.exit("Length of get_metrics() does not match length of get_one_hot().")
 
     def run_subprocess(self, element: list, full_cmd: list):
         """
@@ -68,7 +78,7 @@ class Benchmark:
             result = subprocess.run(self.perf + self.time + full_cmd, capture_output=True)
             # read energy again
             with open(self.intel_rapl["package"], "r") as package, open(self.intel_rapl["core"], "r") as core, open(
-                self.intel_rapl["max_energy"], "r") as max_en:
+                    self.intel_rapl["max_energy"], "r") as max_en:
                 max_energy = int(max_en.readline().rstrip())
                 package_energy = (int(package.readline().rstrip()) - package_energy + max_energy) % max_energy
                 core_energy = (int(core.readline().rstrip()) - core_energy + max_energy) % max_energy
@@ -120,7 +130,10 @@ class Benchmark:
     def split_results(self, training_percentage: int) -> None:
         self.training_percentage = training_percentage
         for key, value in self.output.items():
-            predictor_key = self._convert_keys_to_int(key)
+            if self.one_hot:
+                predictor_key = self._convert_keys_one_hot(key)
+            else:
+                predictor_key = self._convert_keys_to_int(key)
             # go through repetitions
             for bench in value:
                 if random.randint(1, 100) <= self.training_percentage:
@@ -169,6 +182,23 @@ class Benchmark:
             csv_key.append(ele)
         return tuple(csv_key)
 
+    def _convert_keys_one_hot(self, key: tuple) -> tuple:
+        csv_key = list()
+        metrics = self.get_metrics()
+        one_hot = self.get_one_hot()
+        for idx, val in enumerate(key):
+            if one_hot[idx]:
+                arr = [0] * len(metrics[idx])
+                pos = metrics[idx].index(val)
+                arr[pos] = 1
+                csv_key += arr
+            else:
+                try:
+                    csv_key.append(int(val))
+                except ValueError:
+                    csv_key.append(metrics[idx].index(val))
+        return tuple(csv_key)
+
     def _convert_ints_to_key(self, csv_key: list) -> tuple:
         csv_key = [int(i) for i in csv_key]
         key_list = list()
@@ -178,8 +208,8 @@ class Benchmark:
         return tuple(key_list)
 
     def train_llsp(self) -> None:
-        # read out some informations
-        num_metrics = len(list(self.training.keys())[0])
+        # +1 for dummy
+        num_metrics = len(list(self.training.keys())[0]) + 1
 
         # connect c-file
         so_file = "helper.so"
@@ -192,17 +222,21 @@ class Benchmark:
             my_functions.initialize(c_size_t(num_metrics))
             # start training
             for key, value in self.training.items():
-                metric = (c_double * num_metrics)(*list(key))
+                dummy_key = [1] + list(key)
+                metric = (c_double * num_metrics)(*dummy_key)
                 for rep in value:
                     target = c_double(rep[param])
                     my_functions.add(metric, target)
             # solving
             if my_functions.solve() != 1:
-                print("Prediction failed")
-                sys.exit(2)
+                sys.exit("Prediction failed! llsp returned: {}. Expected: 1.".format(my_functions.solve()))
             # if solving works, start predicting
             for key, value in self.output.items():
-                metric = (c_double * num_metrics)(*list(self._convert_keys_to_int(key)))
+                if self.one_hot:
+                    dummy_key = [1] + list(self._convert_keys_one_hot(key))
+                else:
+                    dummy_key = [1] + list(self._convert_keys_to_int(key))
+                metric = (c_double * num_metrics)(*dummy_key)
                 prediction = my_functions.predict(metric)
                 self.predicted.setdefault(key, dict())[param] = prediction
             # remove everything

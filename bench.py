@@ -17,12 +17,12 @@ def clean_up(ext: tuple):
 
 class Ffmpeg(Benchmark):
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
         self.cmd = ["ffmpeg", "-y", "-f", "image2", "-i", "raw/life_%06d.pbm", "-vf", "scale=1080:1080"]
         self.quality_steps = ["0", "10", "20", "30", "40", "50"]
         self.fps = ["1", "5", "10", "15", "25"]
         # self.scale = [720, 1080, 2048]
         self.preset = ["veryfast", "faster", "fast", "medium", "slow", "slower", "veryslow"]
+        super().__init__(*args, **kwargs)
 
     def bench(self):
         combos = list(itertools.product(*self.get_metrics()))
@@ -34,15 +34,19 @@ class Ffmpeg(Benchmark):
     def get_metrics(self):
         return [self.quality_steps, self.fps, self.preset]
 
+    @staticmethod
+    def get_one_hot() -> list:
+        return [False, False, True]
+
 
 class Zip(Benchmark):
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
         self.cmd = ["7z", "a", "-aoa", "-t7z"]
         self.cmd_two = ["output.7z", "raw/*.pbm", "-r"]
         self.x = ["0", "1", "3", "5", "7", "9"]
         self.mt = ["on", "off"]
         self.algo = ["lzma", "lzma2", "bzip2", "deflate"]
+        super().__init__(*args, **kwargs)
 
     def bench(self):
         combos = list(itertools.product(*self.get_metrics()))
@@ -54,10 +58,13 @@ class Zip(Benchmark):
     def get_metrics(self):
         return [self.x, self.mt, self.algo]
 
+    @staticmethod
+    def get_one_hot() -> list:
+        return [False, False, True]
+
 
 class Openssl(Benchmark):
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
         self.cmd_enc = ["openssl", "enc", "-pass", "pass:1234", "-out", "encrypted.data"]
         self.cmd_dec = ["openssl", "enc", "-d", "-pass", "pass:1234"]
         self.salt = ["-salt", "-nosalt"]
@@ -65,6 +72,7 @@ class Openssl(Benchmark):
         self.pbkdf2 = ["", "-pbkdf2"]
         self.enc = ["-aes-128-cbc", "-aes-128-ecb", "-aes-192-cbc", "-aes-192-ecb", "-aes-256-cbc", "-aes-256-ecb"]
         self.sizes = ["10", "100", "1000", "10000"]
+        super().__init__(*args, **kwargs)
 
     def bench(self):
         combos = list(itertools.product(*self.get_metrics()[:-1]))
@@ -78,6 +86,10 @@ class Openssl(Benchmark):
 
     def get_metrics(self):
         return [self.enc, self.base64, self.salt, self.pbkdf2, self.sizes]
+
+    @staticmethod
+    def get_one_hot() -> list:
+        return [True, False, False, False, False]
 
 
 if __name__ == '__main__':
@@ -98,6 +110,7 @@ if __name__ == '__main__':
                                help='A value between 1 and 100. Used to use a part of benched data as trainings data')
     parser_import.add_argument('-g', '--graphs', action='store_true',
                                help='You will get beautiful graphs :)')
+    parser_import.add_argument('--one_hot', action='store_true', help='Set this flag if you want one hot encoding')
 
     args = parser.parse_args()
 
@@ -119,9 +132,9 @@ if __name__ == '__main__':
 
     try:
         # Benching
-        benchs.append(Ffmpeg(perf, repetitions, intel=args.intel))
-        benchs.append(Zip(perf, repetitions, intel=args.intel))
-        benchs.append(Openssl(perf, repetitions, intel=args.intel))
+        benchs.append(Ffmpeg(perf, repetitions, intel=args.intel, one_hot=args.one_hot))
+        benchs.append(Zip(perf, repetitions, intel=args.intel, one_hot=args.one_hot))
+        benchs.append(Openssl(perf, repetitions, intel=args.intel, one_hot=args.one_hot))
         if args.bench == 'bench':
             print("Welcome to our Benchmark! We are doing {} repetitions per metric.".format(repetitions))
             for b in benchs:
